@@ -1,7 +1,7 @@
 """
 sentiment_models.py
 -------------------
-Three models for binary sentiment classification on the IMDB dataset.
+Two models for binary sentiment classification on the IMDB dataset.
 
   TextCNN  - Multi-filter convolutional network over word embeddings (Kim 2014)
   BiLSTM   - Bidirectional LSTM with final hidden state classification
