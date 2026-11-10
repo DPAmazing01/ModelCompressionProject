@@ -6,15 +6,6 @@ Batch Size = 256
 Epochs = 30
 Weight Decay = 0.0001
 
-AST
-Optimizer = Adam
-Learning Rate = 1e-5
-LR Scheduler = ReduceLROnPlateau, patience=5
-Batch Size = 32
-Epochs = 10
-Weight Decay = 5e-7
-Warmup Steps = 1000
-
 AudioLSTM
 Optimizer = Adam
 Learning Rate = 0.001
@@ -33,16 +24,6 @@ Dropout = 0.5
 Filter Sizes = (3, 4, 5)
 Num Filters = 100
 
-BERT
-Optimizer = AdamW
-Learning Rate = 2e-5
-LR Scheduler = Linear warmup + decay
-Batch Size = 32
-Epochs = 5
-Warmup Ratio = 0.1
-Weight Decay = 0.01
-Max Seq Length = 512
-
 BiLSTM
 Optimizer = Adam
 Learning Rate = 0.001
@@ -51,26 +32,6 @@ Batch Size = 64
 Epochs = 20
 Dropout = 0.3
 Gradient Clipping = 5
-
-GRUSeq2Seq
-Optimizer = Adam
-Learning Rate = 0.001
-LR Scheduler = ReduceLROnPlateau, patience=3
-Batch Size = 64
-Epochs = 20
-Teacher Forcing Ratio = 0.5
-Weight Decay = 1e-5
-Gradient Clipping = 1
-
-TranslationTransformer
-Optimizer = Adam
-Learning Rate = 0.0001
-LR Scheduler = Noam, warmup_steps=4000
-Batch Size = 64
-Epochs = 20
-Beta1/Beta2 = 0.9/0.98
-Gradient Clipping = 1
-Label Smoothing = 0.1
 
 ConvS2S
 Optimizer = NAG
@@ -82,3 +43,13 @@ Dropout = 0.1
 Gradient Clipping = 0.1
 Weight Decay = 1e-4
 Momentum = 0.99
+
+GRUSeq2Seq
+Optimizer = Adam
+Learning Rate = 0.001
+LR Scheduler = ReduceLROnPlateau, patience=3
+Batch Size = 64
+Epochs = 20
+Teacher Forcing Ratio = 0.5
+Weight Decay = 1e-5
+Gradient Clipping = 1
