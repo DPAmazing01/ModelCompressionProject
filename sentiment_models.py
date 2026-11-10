@@ -4,15 +4,10 @@ sentiment_models.py
 Three models for binary sentiment classification on the IMDB dataset.
 
   TextCNN  - Multi-filter convolutional network over word embeddings (Kim 2014)
-  BERT     - Pretrained BERT encoder with classification head via HuggingFace
   BiLSTM   - Bidirectional LSTM with final hidden state classification
 
 Input conventions
   TextCNN / BiLSTM : (batch, seq_len)  token ID sequences from a shared vocabulary
-  BERT             : expects HuggingFace tokenizer outputs:
-                       input_ids      (batch, seq_len)
-                       attention_mask (batch, seq_len)
-                     passed as keyword arguments (see build_bert usage note)
 """
 
 import torch
@@ -83,68 +78,6 @@ class TextCNN(nn.Module):
         cat = torch.cat(pooled, dim=1)              # (batch, num_filters * len(filter_sizes))
         cat = self.dropout(cat)
         return self.classifier(cat)
-
-
-# =============================================================================
-# BERT - Smaller Variant (DistilBERT)
-# =============================================================================
-# DistilBERT is a distilled version of BERT-base with 6 layers instead of 12,
-# 66M parameters vs 110M, and ~97% of BERT's GLUE performance.
-# The HuggingFace interface is nearly identical to BertForSequenceClassification
-# so no changes are needed in your training loop or compression utilities.
-#
-# Key interface difference from BERT:
-#   DistilBERT does not use token_type_ids, so do not pass that argument
-#   from your tokenizer output. Pass only input_ids and attention_mask.
-#
-#   tokenizer output usage:
-#     encoding = tokenizer(texts, padding=True, truncation=True,
-#                          max_length=512, return_tensors="pt")
-#     logits = model(
-#         input_ids=encoding["input_ids"],
-#         attention_mask=encoding["attention_mask"]
-#         # do NOT pass token_type_ids here
-#     ).logits
-# =============================================================================
- 
-def build_bert(num_classes: int = 2, pretrained: bool = True):
-    """
-    Returns a DistilBERT model configured for `num_classes` output classes.
- 
-    Replaces the original bert-base-uncased with distilbert-base-uncased:
-      - 6 transformer layers (vs 12 in BERT-base)
-      - 66M parameters (vs 110M in BERT-base)
-      - Same 768-dimensional hidden states
-      - No token_type_ids (see interface note above)
- 
-    Args:
-        num_classes : number of output classes (2 for binary IMDB sentiment)
-        pretrained  : if True, loads distilbert-base-uncased pretrained weights
- 
-    Returns:
-        DistilBertForSequenceClassification with PyTorch backend
-    """
-    from transformers import (
-        DistilBertForSequenceClassification,
-        DistilBertConfig,
-    )
- 
-    if pretrained:
-        model = DistilBertForSequenceClassification.from_pretrained(
-            "distilbert-base-uncased",
-            num_labels=num_classes,
-        )
-    else:
-        config = DistilBertConfig(
-            num_labels=num_classes,
-            n_layers=6,          # DistilBERT default
-            n_heads=12,          # DistilBERT default
-            dim=768,             # same hidden size as BERT-base
-            hidden_dim=3072,     # same FFN dim as BERT-base
-        )
-        model = DistilBertForSequenceClassification(config)
- 
-    return model
 
 
 # =============================================================================
