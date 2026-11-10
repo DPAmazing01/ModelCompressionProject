@@ -1,20 +1,19 @@
 """
 translation_models.py
 ---------------------
-Three models for German -> English machine translation on IWSLT2017.
+Two models for German -> English machine translation on IWSLT2017.
 
   GRUSeq2Seq             - GRU encoder-decoder with Bahdanau attention
-  TranslationTransformer - Standard encoder-decoder Transformer (Vaswani 2017)
   ConvS2S                - Convolutional Seq2Seq with multi-step attention
                            (Gehring et al. 2017, simplified)
 
-All three models share the same interface:
+Both models share the same interface:
     logits = model(src, tgt)
     logits shape: (batch, tgt_len, tgt_vocab_size)
 
 During inference, pass the decoder input without teacher forcing:
     logits = model(src, tgt, teacher_forcing_ratio=0.0)   # GRU
-    logits = model(src, tgt)                               # Transformer / ConvS2S
+    logits = model(src, tgt)                               # ConvS2S
     then argmax over the last dimension for predicted token ids.
 """
 
@@ -22,33 +21,6 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-
-# =============================================================================
-# Sinusoidal Positional Encoding
-# =============================================================================
-
-class PositionalEncoding(nn.Module):
-    """
-    Adds sinusoidal positional encodings to an embedding tensor.
-    Used by TranslationTransformer; ConvS2S uses learned position embeddings.
-    """
-    def __init__(self, d_model: int, max_len: int = 512, dropout: float = 0.1):
-        super().__init__()
-        self.dropout = nn.Dropout(dropout)
-
-        pe       = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len).unsqueeze(1).float()
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
-        )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        self.register_buffer("pe", pe.unsqueeze(0))    # (1, max_len, d_model)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (batch, seq_len, d_model)
-        return self.dropout(x + self.pe[:, :x.size(1)])
 
 
 # =============================================================================
@@ -213,102 +185,7 @@ class GRUSeq2Seq(nn.Module):
 
 
 # =============================================================================
-# 2. Translation Transformer (Vaswani et al., 2017)
-# =============================================================================
-# Built on PyTorch's built-in nn.Transformer (encoder-decoder).
-# Includes learned source and target token embeddings, sinusoidal positional
-# encoding, and a linear projection to the target vocabulary.
-# =============================================================================
-
-class TranslationTransformer(nn.Module):
-    """
-    Standard encoder-decoder Transformer for sequence-to-sequence translation.
-
-    Args:
-        src_vocab_size    : source vocabulary size
-        tgt_vocab_size    : target vocabulary size
-        d_model           : model dimensionality (embedding size)
-        nhead             : number of attention heads (d_model must be divisible by nhead)
-        num_encoder_layers: number of Transformer encoder layers
-        num_decoder_layers: number of Transformer decoder layers
-        dim_feedforward   : inner dimension of position-wise FFN
-        dropout           : dropout probability
-        max_len           : maximum sequence length for positional encoding
-    """
-    def __init__(
-        self,
-        src_vocab_size:     int,
-        tgt_vocab_size:     int,
-        d_model:            int   = 256,
-        nhead:              int   = 4,
-        num_encoder_layers: int   = 3,
-        num_decoder_layers: int   = 3,
-        dim_feedforward:    int   = 512,
-        dropout:            float = 0.1,
-        max_len:            int   = 512,
-    ):
-        super().__init__()
-        self.d_model = d_model
-
-        self.src_embedding = nn.Embedding(src_vocab_size, d_model)
-        self.tgt_embedding = nn.Embedding(tgt_vocab_size, d_model)
-        self.pos_encoding  = PositionalEncoding(d_model, max_len, dropout)
-
-        self.transformer = nn.Transformer(
-            d_model=d_model,
-            nhead=nhead,
-            num_encoder_layers=num_encoder_layers,
-            num_decoder_layers=num_decoder_layers,
-            dim_feedforward=dim_feedforward,
-            dropout=dropout,
-            batch_first=True,
-        )
-        self.fc_out = nn.Linear(d_model, tgt_vocab_size)
-        self._init_weights()
-
-    def _init_weights(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-
-    def _make_pad_mask(self, seq: torch.Tensor, pad_idx: int = 1) -> torch.Tensor:
-        """Returns a boolean mask of shape (batch, seq_len) where True = padding."""
-        return seq == pad_idx
-
-    def forward(
-        self,
-        src:         torch.Tensor,
-        tgt:         torch.Tensor,
-        src_pad_idx: int = 1,
-        tgt_pad_idx: int = 1,
-    ) -> torch.Tensor:
-        # src: (batch, src_len)
-        # tgt: (batch, tgt_len)  — pass tgt[:-1] during training (teacher forcing)
-        tgt_len = tgt.size(1)
-
-        src_key_padding_mask = self._make_pad_mask(src, src_pad_idx)   # (batch, src_len)
-        tgt_key_padding_mask = self._make_pad_mask(tgt, tgt_pad_idx)   # (batch, tgt_len)
-
-        # Causal mask prevents decoder from attending to future tokens
-        tgt_mask = nn.Transformer.generate_square_subsequent_mask(
-            tgt_len, device=src.device
-        )
-
-        src_emb = self.pos_encoding(self.src_embedding(src) * math.sqrt(self.d_model))
-        tgt_emb = self.pos_encoding(self.tgt_embedding(tgt) * math.sqrt(self.d_model))
-
-        out = self.transformer(
-            src_emb, tgt_emb,
-            tgt_mask=tgt_mask,
-            src_key_padding_mask=src_key_padding_mask,
-            tgt_key_padding_mask=tgt_key_padding_mask,
-            memory_key_padding_mask=src_key_padding_mask,
-        )
-        return self.fc_out(out)   # (batch, tgt_len, tgt_vocab_size)
-
-
-# =============================================================================
-# 3. ConvS2S - Convolutional Sequence-to-Sequence (Gehring et al., 2017)
+# 2. ConvS2S - Convolutional Sequence-to-Sequence (Gehring et al., 2017)
 # =============================================================================
 # Replaces recurrence entirely with stacked 1D convolutions.
 # Key architectural features:
