@@ -1,16 +1,14 @@
 """
 audio_models.py
 ---------------
-Three models for audio classification on the Google Speech Commands dataset
+Two models for audio classification on the Google Speech Commands dataset
 (35-class spoken word recognition).
 
   M3         - 3-layer 1D CNN operating on raw waveforms
-  AST        - Audio Spectrogram Transformer via HuggingFace
   AudioLSTM  - LSTM operating on mel-spectrogram frame sequences
 
 Input conventions
   M3        : (batch, 1, n_samples)         raw waveform, 16 kHz -> 16000 samples
-  AST       : (batch, n_mels, time_frames)  mel-spectrogram from ASTFeatureExtractor
   AudioLSTM : (batch, time_steps, n_mels)  mel-spectrogram as time-first sequence
 """
 
@@ -64,64 +62,6 @@ class M3(nn.Module):
         x = self.pool3(F.relu(self.bn3(self.conv3(x))))
         x = x.squeeze(-1)               # (batch, n_channel)
         return self.classifier(x)
-
-
-# =============================================================================
-# AST - Audio Spectrogram Transformer (Small Variant)
-# =============================================================================
-# Wraps HuggingFace ASTForAudioClassification.
-# Treating the mel-spectrogram as a grid of patches (analogous to ViT for
-# images), AST applies standard Transformer self-attention over those patches.
-#
-# Preprocessing:
-#   Use ASTFeatureExtractor from transformers to convert raw waveforms to
-#   mel-spectrograms before passing to this model:
-#
-#     from transformers import ASTFeatureExtractor
-#     extractor = ASTFeatureExtractor.from_pretrained(
-#         "MIT/ast-finetuned-speech-commands-v2"
-#     )
-#     inputs = extractor(waveform, sampling_rate=16000, return_tensors="pt")
-#     logits = ast_model(**inputs).logits
-# =============================================================================
- 
-def build_ast(num_classes: int = 35, pretrained: bool = True):
-    """
-    Returns a smaller AST model configured for `num_classes` output classes.
- 
-    Uses MIT/ast-finetuned-audioset-10-10-0.4593 as the pretrained base,
-    which is lighter than the Speech Commands v2 checkpoint and fine-tunes
-    well on Speech Commands with a replaced classification head.
- 
-    Args:
-        num_classes : number of output classes (35 for Speech Commands)
-        pretrained  : if True, loads the lighter pretrained AST weights
- 
-    Returns:
-        ASTForAudioClassification with replaced classification head
-    """
-    from transformers import ASTForAudioClassification, ASTConfig
- 
-    if pretrained:
-        model = ASTForAudioClassification.from_pretrained(
-            "MIT/ast-finetuned-audioset-10-10-0.4593"
-        )
-        # Always replace the head since AudioSet has 527 classes
-        # and Speech Commands has 35
-        in_features = model.classifier.dense.in_features
-        model.classifier.dense = nn.Linear(in_features, num_classes)
-    else:
-        # Manually configure a smaller AST from scratch
-        config = ASTConfig(
-            num_labels=num_classes,
-            hidden_size=384,          # DeiT-Small equivalent hidden dim
-            num_hidden_layers=6,      # half the layers of the default AST
-            num_attention_heads=6,    # 384 / 6 = 64 per head
-            intermediate_size=1536,   # 4 * hidden_size convention
-        )
-        model = ASTForAudioClassification(config)
- 
-    return model
 
 
 # =============================================================================
